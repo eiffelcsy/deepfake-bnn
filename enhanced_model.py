@@ -54,18 +54,18 @@ class DeepfakeVideoClassifier(L.LightningModule):
             nn.Linear(self.frame_feature_dim + self.processed_feature_dim, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.Dropout(0.5),
+            nn.Dropout(0.6),  # Increased dropout
             nn.Linear(512, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.5),  # Increased dropout
             nn.Linear(256, num_classes if num_classes >= 3 else 1)
         )
         
         # Initialize fusion network weights to prevent exploding gradients 
         for m in self.fusion_network.modules():
             if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
+                nn.init.xavier_normal_(m.weight, gain=0.7)  # Lower gain for better stability
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
         
@@ -128,6 +128,22 @@ class DeepfakeVideoClassifier(L.LightningModule):
         frame_features = self.frame_feature_norm(frame_features)
         processed_features = self.processed_feature_norm(processed_features)
         
+        # Add noise during training for better generalization
+        if self.training:
+            # Add small Gaussian noise to features
+            frame_features = frame_features + torch.randn_like(frame_features) * 0.05
+            processed_features = processed_features + torch.randn_like(processed_features) * 0.05
+            
+            # Randomly zero out some features (feature dropout)
+            if torch.rand(1).item() < 0.3:  # 30% chance to apply feature masking
+                # Create random mask for frame features (keep 80-95% of features)
+                frame_mask = torch.bernoulli(torch.ones_like(frame_features) * 0.9).to(self.device)
+                frame_features = frame_features * frame_mask
+                
+                # Create random mask for processed features (keep 80-95% of features)
+                proc_mask = torch.bernoulli(torch.ones_like(processed_features) * 0.9).to(self.device)
+                processed_features = processed_features * proc_mask
+        
         # Store intermediate features for analysis
         self.intermediate_features['frame_features'] = frame_features
         self.intermediate_features['processed_features'] = processed_features
@@ -146,19 +162,23 @@ class DeepfakeVideoClassifier(L.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.learning_rate,
-            weight_decay=1e-4  # Add weight decay to prevent overfitting
+            weight_decay=5e-4  # Increased weight decay for stronger regularization
         )
-        scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1., end_factor=0.1, total_iters=50
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, 
+            mode='min', 
+            factor=0.5, 
+            patience=3,
+            verbose=True
         )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "interval": "epoch",
-                "frequency": 1
-            },
-            "monitor": "val_loss"
+                "frequency": 1,
+                "monitor": "val_loss"
+            }
         }
     
     def _step(self, batch, i_batch, phase=None):
@@ -178,19 +198,29 @@ class DeepfakeVideoClassifier(L.LightningModule):
         # Calculate loss with a dynamic pos_weight based on training progress
         if self.num_classes == 2:
             # Scale down pos_weight during initial training to prevent loss explosion
-            # This helps avoid too much emphasis on the positive class at the beginning
             if phase == "train":
                 current_epoch = self.current_epoch + 1  # epochs start at 0
                 warmup_epochs = 5
                 dynamic_pos_weight = self.pos_weight * min(current_epoch / warmup_epochs, 1.0)
-            else:
-                dynamic_pos_weight = self.pos_weight
                 
-            loss = F.binary_cross_entropy_with_logits(
-                input=outs["logits"][:, 0], 
-                target=outs["labels"], 
-                pos_weight=torch.as_tensor(dynamic_pos_weight, device=self.device)
-            )
+                # Apply label smoothing during training for better generalization
+                # Instead of using hard 0/1 labels, use 0.1/0.9 to prevent overconfidence
+                smoothed_labels = outs["labels"].clone()
+                smoothed_labels = smoothed_labels * 0.9 + 0.05  # Smooth labels between 0.05 and 0.95
+                
+                loss = F.binary_cross_entropy_with_logits(
+                    input=outs["logits"][:, 0], 
+                    target=smoothed_labels, 
+                    pos_weight=torch.as_tensor(dynamic_pos_weight, device=self.device)
+                )
+            else:
+                # Use normal labels for validation
+                dynamic_pos_weight = self.pos_weight
+                loss = F.binary_cross_entropy_with_logits(
+                    input=outs["logits"][:, 0], 
+                    target=outs["labels"], 
+                    pos_weight=torch.as_tensor(dynamic_pos_weight, device=self.device)
+                )
         else:
             raise NotImplementedError("Only binary classification is implemented!")
         
@@ -263,10 +293,42 @@ class DeepfakeVideoClassifier(L.LightningModule):
                 indices_phase = [i for i in range(len(phases)) if phases[i] == phase]
                 if len(indices_phase) == 0:
                     continue                
+                
+                # Get predictions and targets for this phase
+                phase_logits = logits[indices_phase]
+                phase_labels = labels[indices_phase]
+                
+                # Calculate predictions (binary classification)
+                preds = (torch.sigmoid(phase_logits) > 0.5).float()
+                
+                # Calculate metrics
                 metrics = {
-                    "acc": accuracy(preds=logits[indices_phase], target=labels[indices_phase], task="binary", average="micro"),
-                    "auc": auroc(preds=logits[indices_phase], target=labels[indices_phase].long(), task="binary", average="micro"),
+                    "acc": accuracy(preds=phase_logits, target=phase_labels, task="binary", average="micro"),
+                    "auc": auroc(preds=phase_logits, target=phase_labels.long(), task="binary", average="micro"),
                 }
+                
+                # Calculate TP, FP, TN, FN for detailed metrics
+                true_positives = torch.sum((preds == 1) & (phase_labels == 1)).item()
+                false_positives = torch.sum((preds == 1) & (phase_labels == 0)).item()
+                true_negatives = torch.sum((preds == 0) & (phase_labels == 0)).item()
+                false_negatives = torch.sum((preds == 0) & (phase_labels == 1)).item()
+                
+                # Avoid division by zero
+                epsilon = 1e-7
+                
+                # Calculate precision, recall, and F1 score
+                precision = true_positives / (true_positives + false_positives + epsilon)
+                recall = true_positives / (true_positives + false_negatives + epsilon)
+                f1_score = 2 * (precision * recall) / (precision + recall + epsilon)
+                
+                # Add these metrics to the dictionary
+                metrics.update({
+                    "precision": precision,
+                    "recall": recall,
+                    "f1": f1_score,
+                })
+                
+                # Log all metrics
                 self.log_dict({
                     f"{phase}_{k}": v for k, v in metrics.items() if isinstance(v, (torch.Tensor, int, float))
                 }, prog_bar=True, logger=True)
