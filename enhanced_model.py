@@ -65,7 +65,34 @@ class DeepfakeVideoClassifier(L.LightningModule):
         self.num_classes = num_classes
         self.epoch_outs = []
         
+        # Add hooks for feature extraction
+        self.intermediate_features = {}
+        
         self.save_hyperparameters()
+    
+    def extract_frame_features(self, frame):
+        """
+        Extract frame features from the backbone
+        
+        Args:
+            frame: Video frame tensor (B, C, H, W)
+            
+        Returns:
+            Frame features tensor
+        """
+        # Preprocess the frame if needed
+        if (self.frame_feature_extractor.add_magnitude_channel or 
+            self.frame_feature_extractor.add_fft_channel or 
+            self.frame_feature_extractor.add_lbp_channel):
+            frame = self.frame_feature_extractor.add_new_channels(frame)
+        
+        # Apply the adapter
+        frame = self.frame_feature_extractor.adapter(frame)
+        
+        # Extract features using the backbone
+        frame_features = self.frame_feature_extractor.base_model(frame)
+        
+        return frame_features
     
     def forward(self, frame, processed_features):
         """
@@ -80,19 +107,16 @@ class DeepfakeVideoClassifier(L.LightningModule):
         """
         outs = {}
         
-        # Extract frame features using BNext4DFR
-        frame_features = self.frame_feature_extractor.base_model(
-            self.frame_feature_extractor.adapter(
-                self.frame_feature_extractor.add_new_channels(frame) 
-                if (self.frame_feature_extractor.add_magnitude_channel or 
-                    self.frame_feature_extractor.add_fft_channel or 
-                    self.frame_feature_extractor.add_lbp_channel) 
-                else frame
-            )
-        )
+        # Extract frame features
+        frame_features = self.extract_frame_features(frame)
+        
+        # Store intermediate features for analysis
+        self.intermediate_features['frame_features'] = frame_features
+        self.intermediate_features['processed_features'] = processed_features
         
         # Concatenate frame features with processed features
         combined_features = torch.cat([frame_features, processed_features], dim=1)
+        self.intermediate_features['combined_features'] = combined_features
         
         # Pass through fusion network
         outs["logits"] = self.fusion_network(combined_features)

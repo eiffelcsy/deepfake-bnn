@@ -7,6 +7,7 @@ opencv-python
 scipy
 scikit-learn
 scikit-image
+shap
 einops
 timm
 torch
