@@ -22,8 +22,8 @@ def setup_dataset_structure(output_dir):
     # Create main dataset directory
     os.makedirs(output_dir, exist_ok=True)
     
-    # Create train/val/test splits
-    for split in ['train', 'val', 'test']:
+    # Create train/val splits
+    for split in ['train', 'val']:
         os.makedirs(os.path.join(output_dir, split), exist_ok=True)
     
     print(f"Created dataset structure in {output_dir}")
@@ -113,7 +113,7 @@ def read_tfrecord_map(tfrecord_path):
     return filename_to_fake
 
 
-def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, num_frames=10):
+def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.8, val_ratio=0.2, num_frames=10):
     """
     Processes a directory of pre-extracted frames and organizes them into the PDD dataset structure
     
@@ -123,7 +123,6 @@ def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.7, val_
         tfrecord_path: Path to the TFRecord file with labels
         train_ratio: Proportion of videos to use for training
         val_ratio: Proportion of videos to use for validation
-        test_ratio: Proportion of videos to use for testing
         num_frames: Number of frames to use from each video
     """
     # Create the dataset structure
@@ -142,18 +141,16 @@ def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.7, val_
     # Shuffle the videos for random split
     random.shuffle(video_ids)
     
-    # Split the videos into train/val/test
+    # Split the videos into train/val
     train_end_idx = int(len(video_ids) * train_ratio)
-    val_end_idx = train_end_idx + int(len(video_ids) * val_ratio)
     
     train_videos = video_ids[:train_end_idx]
-    val_videos = video_ids[train_end_idx:val_end_idx]
-    test_videos = video_ids[val_end_idx:]
+    val_videos = video_ids[train_end_idx:]
     
-    print(f"Split {len(video_ids)} videos into Train: {len(train_videos)}, Val: {len(val_videos)}, Test: {len(test_videos)}")
+    print(f"Split {len(video_ids)} videos into Train: {len(train_videos)}, Val: {len(val_videos)}")
     
     # Process each set of videos
-    for videos, split in [(train_videos, 'train'), (val_videos, 'val'), (test_videos, 'test')]:
+    for videos, split in [(train_videos, 'train'), (val_videos, 'val')]:
         for video_id in videos:
             # Verify the video exists in TFRecord
             if video_id not in filename_to_fake:
@@ -176,14 +173,11 @@ def main():
     parser.add_argument('--tfrecord', type=str, default='./pdd_features.tfrecord',
                         help='Path to TFRecord file with pre-processed features')
     
-    parser.add_argument('--train_ratio', type=float, default=0.7,
+    parser.add_argument('--train_ratio', type=float, default=0.8,
                         help='Proportion of videos to use for training')
     
-    parser.add_argument('--val_ratio', type=float, default=0.15,
+    parser.add_argument('--val_ratio', type=float, default=0.2,
                         help='Proportion of videos to use for validation')
-    
-    parser.add_argument('--test_ratio', type=float, default=0.15,
-                        help='Proportion of videos to use for testing')
     
     parser.add_argument('--num_frames', type=int, default=10,
                         help='Number of frames to use from each video')
@@ -198,8 +192,8 @@ def main():
     np.random.seed(args.seed)
     
     # Validate ratios
-    if abs(args.train_ratio + args.val_ratio + args.test_ratio - 1.0) > 1e-6:
-        print("Warning: Train, val, and test ratios should sum to 1.0")
+    if abs(args.train_ratio + args.val_ratio - 1.0) > 1e-6:
+        print("Warning: Train and val ratios should sum to 1.0")
     
     # Process dataset
     process_dataset(
@@ -208,7 +202,6 @@ def main():
         args.tfrecord,
         args.train_ratio,
         args.val_ratio,
-        args.test_ratio,
         args.num_frames
     )
     

@@ -55,7 +55,7 @@ To prepare your PDD dataset:
    - Refer to an earlier version of the script or extract frames separately
 
 This will:
-- Organize the frames into train/val/test splits
+- Organize the frames into train/val splits
 - Create the expected directory structure:
   ```
   pdd/
@@ -67,14 +67,10 @@ This will:
   │   ├── video2/
   │   │   └── ...
   │   └── ...
-  ├── val/
-  │   ├── video3/
-  │   │   └── ...
-  │   └── ...
-  └── test/
-      ├── video4/
-  │   └── ...
-  └── ...
+  └── val/
+      ├── video3/
+      │   └── ...
+      └── ...
   ```
 
 The script will choose frames evenly distributed from each video, renaming them to the expected format.
