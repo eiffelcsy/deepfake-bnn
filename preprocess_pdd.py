@@ -434,7 +434,7 @@ def process_video(filename):
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Process PDD dataset videos and extract features')
-    parser.add_argument('--pdd_path', type=str, default='../PDD', help='Path to PDD dataset')
+    parser.add_argument('--pdd_path', type=str, default='~/scratchDirectory/PDD', help='Path to PDD dataset')
     parser.add_argument('--output_dir', type=str, default='data', help='Directory to save extracted frames')
     parser.add_argument('--output_tfrecord', type=str, default='pdd_features.tfrecord', help='Output TFRecord file path')
     parser.add_argument('--max_workers', type=int, default=1, help='Maximum number of threads to use')
