@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 from pdd_dataset import PDDDataset
 from enhanced_model import DeepfakeVideoDataset
@@ -31,9 +32,9 @@ def args_func():
     parser.add_argument(
         "--split",
         type=str,
-        default="test",
+        default="val",
         choices=["train", "val", "test"],
-        help="Dataset split to analyze",
+        help="Dataset split to analyze (default: val)",
     )
     parser.add_argument(
         "--resolution",
@@ -50,14 +51,44 @@ def args_func():
     args = parser.parse_args()
     return args
 
+def get_available_split(dataset_path, preferred_split='val'):
+    """
+    Find an available dataset split to use.
+    
+    Args:
+        dataset_path: Path to the dataset
+        preferred_split: Preferred split to use (if available)
+        
+    Returns:
+        An available split name ('train', 'val', or 'test')
+    """
+    available_splits = []
+    for split in ['train', 'val', 'test']:
+        if os.path.exists(os.path.join(dataset_path, split)):
+            available_splits.append(split)
+    
+    if not available_splits:
+        raise ValueError(f"No dataset splits found in {dataset_path}. Please make sure the dataset path is correct.")
+    
+    # Use preferred split if available, otherwise use the first available split
+    if preferred_split in available_splits:
+        return preferred_split
+    else:
+        print(f"Preferred split '{preferred_split}' not found. Using '{available_splits[0]}' instead.")
+        return available_splits[0]
+
 if __name__ == "__main__":
     args = args_func()
     
+    # Find an available split to use
+    split_to_use = get_available_split(args.dataset_path, args.split)
+    print(f"Using dataset split: {split_to_use}")
+    
     # Load the PDD dataset
-    print(f"Loading PDD {args.split} dataset from {args.dataset_path}")
+    print(f"Loading PDD {split_to_use} dataset from {args.dataset_path}")
     frame_dataset = PDDDataset(
         dataset_path=args.dataset_path,
-        split=args.split,
+        split=split_to_use,
         resolution=args.resolution,
     )
     
@@ -97,10 +128,21 @@ if __name__ == "__main__":
             break
     
     # Convert to tensors
-    real_samples = torch.stack(real_samples)
-    fake_samples = torch.stack(fake_samples)
-    real_frames = torch.stack(real_frames)
-    fake_frames = torch.stack(fake_frames)
+    if real_samples:
+        real_samples = torch.stack(real_samples)
+        real_frames = torch.stack(real_frames)
+    else:
+        print("Warning: No real samples found.")
+        real_samples = torch.empty(0, 7)
+        real_frames = torch.empty(0, 3, args.resolution, args.resolution)
+        
+    if fake_samples:
+        fake_samples = torch.stack(fake_samples)
+        fake_frames = torch.stack(fake_frames)
+    else:
+        print("Warning: No fake samples found.")
+        fake_samples = torch.empty(0, 7)
+        fake_frames = torch.empty(0, 3, args.resolution, args.resolution)
     
     print(f"Collected {len(real_samples)} real samples and {len(fake_samples)} fake samples")
     
@@ -112,12 +154,14 @@ if __name__ == "__main__":
     feature_explainer, feature_names = explainer.create_feature_explainer(dataset)
     
     # Analyze real samples
-    print("Analyzing real samples...")
-    explainer.visualize_feature_importance(feature_explainer, real_samples, feature_names)
+    if len(real_samples) > 0:
+        print("Analyzing real samples...")
+        explainer.visualize_feature_importance(feature_explainer, real_samples, feature_names)
     
     # Analyze fake samples
-    print("Analyzing fake samples...")
-    explainer.visualize_feature_importance(feature_explainer, fake_samples, feature_names)
+    if len(fake_samples) > 0:
+        print("Analyzing fake samples...")
+        explainer.visualize_feature_importance(feature_explainer, fake_samples, feature_names)
     
     # Visualize frame activations for a few samples
     print("Visualizing frame activations...")

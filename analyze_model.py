@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import argparse
 import numpy as np
+import os
 
 from pdd_dataset import PDDDataset
 from enhanced_model import DeepfakeVideoClassifier, DeepfakeVideoDataset
@@ -14,13 +15,43 @@ def parse_args():
     parser.add_argument('--checkpoint', type=str, required=True, help='Path to model checkpoint')
     parser.add_argument('--dataset_path', type=str, required=True, help='Path to PDD dataset')
     parser.add_argument('--tfrecord', type=str, required=True, help='Path to TFRecord file')
-    parser.add_argument('--split', type=str, default='test', help='Dataset split to analyze')
+    parser.add_argument('--split', type=str, default='val', help='Dataset split to analyze (default: val)')
     parser.add_argument('--num_samples', type=int, default=10, help='Number of samples to analyze')
     return parser.parse_args()
+
+def get_available_split(dataset_path, preferred_split='val'):
+    """
+    Find an available dataset split to use.
+    
+    Args:
+        dataset_path: Path to the dataset
+        preferred_split: Preferred split to use (if available)
+        
+    Returns:
+        An available split name ('train', 'val', or 'test')
+    """
+    available_splits = []
+    for split in ['train', 'val', 'test']:
+        if os.path.exists(os.path.join(dataset_path, split)):
+            available_splits.append(split)
+    
+    if not available_splits:
+        raise ValueError(f"No dataset splits found in {dataset_path}. Please make sure the dataset path is correct.")
+    
+    # Use preferred split if available, otherwise use the first available split
+    if preferred_split in available_splits:
+        return preferred_split
+    else:
+        print(f"Preferred split '{preferred_split}' not found. Using '{available_splits[0]}' instead.")
+        return available_splits[0]
 
 def main(args):
     # Set up device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Find an available split to use
+    split_to_use = get_available_split(args.dataset_path, args.split)
+    print(f"Using dataset split: {split_to_use}")
     
     # Load model
     model = DeepfakeVideoClassifier.load_from_checkpoint(args.checkpoint)
@@ -30,7 +61,7 @@ def main(args):
     # Load dataset
     frame_dataset = PDDDataset(
         dataset_path=args.dataset_path,
-        split=args.split,
+        split=split_to_use,
         resolution=224
     )
     
