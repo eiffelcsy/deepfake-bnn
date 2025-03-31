@@ -12,11 +12,8 @@ import lightning as L
 from lib.util import load_config
 from enhanced_model import DeepfakeVideoClassifier, DeepfakeVideoDataset
 
-# Import dataset classes
-from cifake_dataset import CIFAKEDataset
-from coco_fake_dataset import COCOFakeDataset
-from dffd_dataset import DFFDDataset
-from pdd_dataset import PDDDataset  # Import the new PDD dataset
+# Import PDD dataset class only
+from pdd_dataset import PDDDataset
 
 def args_func():
     parser = argparse.ArgumentParser()
@@ -62,39 +59,13 @@ if __name__ == "__main__":
     random.seed(cfg["test"]["seed"])
     np.random.seed(cfg["test"]["seed"])
     
-    # Load the appropriate test dataset based on config
-    if cfg["dataset"]["name"] == "coco_fake":
-        print(f"Loading COCO-Fake test dataset from {cfg['dataset']['coco2014_path']} and {cfg['dataset']['coco_fake_path']}")
-        test_frame_dataset = COCOFakeDataset(
-            coco2014_path=cfg["dataset"]["coco2014_path"],
-            coco_fake_path=cfg["dataset"]["coco_fake_path"],
-            split="test",
-            mode="single",
-            resolution=cfg["test"]["resolution"],
-        )
-    elif cfg["dataset"]["name"] == "dffd":
-        print(f"Loading DFFD test dataset from {cfg['dataset']['dffd_path']}")
-        test_frame_dataset = DFFDDataset(
-            dataset_path=cfg["dataset"]["dffd_path"],
-            split="test",
-            resolution=cfg["test"]["resolution"],
-        )
-    elif cfg["dataset"]["name"] == "cifake":
-        print(f"Loading CIFAKE test dataset from {cfg['dataset']['cifake_path']}")
-        test_frame_dataset = CIFAKEDataset(
-            dataset_path=cfg["dataset"]["cifake_path"],
-            split="test",
-            resolution=cfg["test"]["resolution"],
-        )
-    elif cfg["dataset"]["name"] == "pdd":
-        print(f"Loading PDD test dataset from {cfg['dataset']['pdd_path']}")
-        test_frame_dataset = PDDDataset(
-            dataset_path=cfg["dataset"]["pdd_path"],
-            split="test",
-            resolution=cfg["test"]["resolution"],
-        )
-    else:
-        raise ValueError(f"Unsupported dataset name: {cfg['dataset']['name']}")
+    # Load only PDD test dataset
+    print(f"Loading PDD test dataset from {cfg['dataset']['pdd_path']}")
+    test_frame_dataset = PDDDataset(
+        dataset_path=cfg["dataset"]["pdd_path"],
+        split="test",
+        resolution=cfg["test"]["resolution"],
+    )
 
     # Create the enhanced test dataset that combines frame data with pre-processed features
     print(f"Loading pre-processed features from {args.tfrecord}")
