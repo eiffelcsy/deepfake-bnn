@@ -105,6 +105,7 @@ def read_tfrecord_map(tfrecord_path):
     for raw_record in raw_dataset:
         example = tf.io.parse_single_example(raw_record, feature_description)
         filename = example['filename'].numpy().decode('utf-8')
+        print(filename)
         fake = int(example['fake'].numpy()[0])  # 0=real, 1=fake
         filename_to_fake[filename] = fake
     
