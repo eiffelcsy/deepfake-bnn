@@ -14,7 +14,7 @@ class PDDDataset(Dataset):
         Args:
             dataset_path: Path to the PDD dataset root directory
             split: 'train', 'val', or 'test' split
-            resolution: Image resolution to resize to
+            resolution: Image resolution to resize to, or 'original' to keep original size
             transform: Optional transform to be applied on a sample
         """
         super(PDDDataset, self).__init__()
@@ -25,11 +25,17 @@ class PDDDataset(Dataset):
         
         # Create default transform if none provided
         if transform is None:
-            self.transform = transforms.Compose([
-                transforms.Resize((resolution, resolution)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
+            if resolution == 'original':
+                self.transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
+            else:
+                self.transform = transforms.Compose([
+                    transforms.Resize((resolution, resolution)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
         else:
             self.transform = transform
         
@@ -90,7 +96,11 @@ class PDDDataset(Dataset):
         except Exception as e:
             print(f"Error loading image {item['image_path']}: {e}")
             # Return a blank image in case of errors
-            image = torch.zeros(3, self.resolution, self.resolution)
+            if self.resolution == 'original':
+                # Default fallback size if original resolution is requested
+                image = torch.zeros(3, 224, 224)
+            else:
+                image = torch.zeros(3, self.resolution, self.resolution)
         
         return {
             'image': image,

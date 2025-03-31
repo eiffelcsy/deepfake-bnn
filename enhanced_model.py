@@ -111,6 +111,12 @@ class DeepfakeVideoClassifier(L.LightningModule):
         # Extract frame features
         frame_features = self.extract_frame_features(frame)
         
+        # Apply adaptive pooling to handle variable input sizes 
+        if frame_features.dim() == 4:  # If features have spatial dimensions
+            adaptive_pool = nn.AdaptiveAvgPool2d(1)
+            frame_features = adaptive_pool(frame_features)
+            frame_features = frame_features.view(frame_features.size(0), -1)
+        
         # Store intermediate features for analysis
         self.intermediate_features['frame_features'] = frame_features
         self.intermediate_features['processed_features'] = processed_features
