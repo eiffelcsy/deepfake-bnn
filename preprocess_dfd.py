@@ -27,6 +27,8 @@ def extract_video_info(video_path):
     fps = cap.get(cv2.CAP_PROP_FPS)
     duration = total_frames / fps
     cap.release()
+
+    print(f"Total frames: {total_frames}, FPS: {fps}, Duration: {duration}")
     return total_frames, fps, duration
 
 def extract_10_frames(video_path, fps, start_time, end_time, save_dir=None, segment_idx=None):
