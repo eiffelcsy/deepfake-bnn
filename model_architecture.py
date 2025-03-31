@@ -219,9 +219,9 @@ class BNext4DFR(L.LightningModule):
     def _clear_memory(self):
         gc.collect()
         torch.cuda.empty_cache()
-         
-        
+
+
+# Example usage
 if __name__ == "__main__":
-    model = BNext4DFR(num_classes=2)
-    # runs a dummy forward pass to check if the model is working properly
-    model(torch.randn(8, 3, 224, 224))
+
+    pass 
