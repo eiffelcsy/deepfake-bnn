@@ -14,7 +14,7 @@ class DeepfakeVideoClassifier(L.LightningModule):
     def __init__(self, num_classes=2, backbone='BNext-T', 
                  freeze_backbone=True, add_magnitude_channel=True, 
                  add_fft_channel=True, add_lbp_channel=True,
-                 learning_rate=1e-4, pos_weight=1.):
+                 learning_rate=1e-5, pos_weight=1.):
         """
         Enhanced deepfake detector that combines frame features with pre-processed video features
         
@@ -131,7 +131,7 @@ class DeepfakeVideoClassifier(L.LightningModule):
             lr=self.learning_rate
         )
         scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1., end_factor=0.1, total_iters=5
+            optimizer, start_factor=1., end_factor=0.1, total_iters=50
         )
         return [optimizer], [scheduler]
     
