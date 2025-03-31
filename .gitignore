@@ -1,1 +1,27 @@
-pretrained
+pretrained%
+
+# PyTorch model files
+*.pth
+*.pth.tar
+*.pt
+*.ckpt
+*.bin
+*.onnx
+*.model
+
+# ML model directories that might contain large files
+pretrained/
+weights/
+checkpoints/
+models/
+
+# Other large file types
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+
+# Logs and cache
+logs/
+.cache/
+__pycache__/
