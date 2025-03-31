@@ -105,11 +105,12 @@ def read_tfrecord_map(tfrecord_path):
     for raw_record in raw_dataset:
         example = tf.io.parse_single_example(raw_record, feature_description)
         filename = example['filename'].numpy().decode('utf-8')
-        print(filename)
+        clean_filename = os.path.splitext(filename)[0]
         fake = int(example['fake'].numpy()[0])  # 0=real, 1=fake
+        filename_to_fake[clean_filename] = fake
         filename_to_fake[filename] = fake
     
-    print(f"Read {len(filename_to_fake)} entries from {tfrecord_path}")
+    print(f"Read {len(filename_to_fake) // 2} entries from {tfrecord_path}")
     return filename_to_fake
 
 
@@ -149,16 +150,38 @@ def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.8, val_
     
     print(f"Split {len(video_ids)} videos into Train: {len(train_videos)}, Val: {len(val_videos)}")
     
+    # Count of videos processed and skipped
+    processed_count = 0
+    skipped_count = 0
+    
     # Process each set of videos
     for videos, split in [(train_videos, 'train'), (val_videos, 'val')]:
         for video_id in videos:
-            # Verify the video exists in TFRecord
-            if video_id not in filename_to_fake:
+            # Try different variations of video_id to match TFRecord entries
+            if video_id in filename_to_fake:
+                # Direct match
+                match_found = True
+            elif video_id + ".mp4" in filename_to_fake:
+                # Try with .mp4 extension
+                match_found = True
+                video_id_for_label = video_id + ".mp4"
+            elif os.path.splitext(video_id)[0] in filename_to_fake:
+                # Try with extension stripped
+                match_found = True
+                video_id = os.path.splitext(video_id)[0]
+            else:
+                match_found = False
+            
+            if not match_found:
                 print(f"Warning: Video {video_id} not found in TFRecord, skipping.")
+                skipped_count += 1
                 continue
             
             # Copy frames
             copy_frames(frames_dir, output_dir, video_id, split, num_frames)
+            processed_count += 1
+    
+    print(f"Processed {processed_count} videos, skipped {skipped_count} videos")
 
 
 def main():
