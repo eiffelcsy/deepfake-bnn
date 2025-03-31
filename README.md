@@ -42,18 +42,20 @@ opencv-python>=4.5.0
 
 The PDD dataset consists of video frames organized in a specific directory structure, along with pre-processed features in a TFRecord file.
 
-To prepare your own PDD dataset from videos:
+To prepare your PDD dataset:
 
-1. Organize your videos in a directory
-2. Run the preparation script:
+1. Option 1: If you have pre-extracted frames:
+   - Place your frames in a directory structure like `./data/[video_id]/`
+   - Run the preparation script:
+   ```bash
+   python prepare_pdd_dataset.py --frames_dir ./data/ --output_dir ../../datasets/pdd --tfrecord ./pdd_features.tfrecord
+   ```
 
-```bash
-python prepare_pdd_dataset.py --videos_dir /path/to/videos --output_dir ../../datasets/pdd --tfrecord ./pdd_features.tfrecord
-```
+2. Option 2: If you need to extract frames from videos:
+   - Refer to an earlier version of the script or extract frames separately
 
 This will:
-- Extract 10 frames from each video
-- Organize them into train/val/test splits
+- Organize the frames into train/val/test splits
 - Create the expected directory structure:
   ```
   pdd/
@@ -71,9 +73,11 @@ This will:
   │   └── ...
   └── test/
       ├── video4/
-      │   └── ...
-      └── ...
+  │   └── ...
+  └── ...
   ```
+
+The script will choose frames evenly distributed from each video, renaming them to the expected format.
 
 ### Training with the PDD Dataset
 
