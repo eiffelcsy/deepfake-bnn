@@ -144,6 +144,7 @@ if __name__ == "__main__":
         limit_train_batches=cfg["train"]["limit_train_batches"],
         limit_val_batches=cfg["train"]["limit_val_batches"],
         max_epochs=cfg["train"]["epoch_num"],
+        log_every_n_steps=5,
         callbacks=[
             L.pytorch.callbacks.ModelCheckpoint(
                 monitor="val_acc",
