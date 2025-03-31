@@ -52,20 +52,27 @@ python prepare_pdd_dataset.py --videos_dir /path/to/videos --output_dir ../../da
 ```
 
 This will:
-- Extract frames from videos
+- Extract 10 frames from each video
 - Organize them into train/val/test splits
 - Create the expected directory structure:
   ```
   pdd/
   ├── train/
-  │   ├── real/
-  │   └── fake/
+  │   ├── video1/
+  │   │   ├── frame_00.jpg
+  │   │   ├── frame_01.jpg
+  │   │   └── ...
+  │   ├── video2/
+  │   │   └── ...
+  │   └── ...
   ├── val/
-  │   ├── real/
-  │   └── fake/
+  │   ├── video3/
+  │   │   └── ...
+  │   └── ...
   └── test/
-      ├── real/
-      └── fake/
+      ├── video4/
+      │   └── ...
+      └── ...
   ```
 
 ### Training with the PDD Dataset
@@ -88,13 +95,14 @@ python test_enhanced_model.py --cfg configs/pdd_enhanced_model.cfg --checkpoint 
 
 ### Frame Dataset
 
-The model expects frames from videos to be provided in a specific directory structure compatible with the PDDDataset class.
+The model expects frames from videos to be provided in a directory structure where each video has its own subdirectory containing the extracted frames.
 
 ### Pre-processed Features
 
 Pre-processed features should be stored in a TFRecord file with the following structure:
 
 - `filename`: String identifying the video
+- `fake`: Binary label (0=real, 1=fake)
 - `flicker`: 45-dimensional flicker feature array
 - `lip_movement_variance`: 5-dimensional lip movement variance feature array
 - `blink`: 5-dimensional blink detection feature array
@@ -102,7 +110,6 @@ Pre-processed features should be stored in a TFRecord file with the following st
 - `pulse`: 50-dimensional pulse detection feature array
 - `psnr`: 45-dimensional PSNR feature array
 - `ssim`: 45-dimensional SSIM feature array
-- `is_real`: Binary label (0=fake, 1=real)
 
 ## Model Architecture
 
@@ -118,4 +125,4 @@ You can customize the model behavior through the configuration file:
 
 - `backbone`: Choose from 'BNext-T', 'BNext-S', 'BNext-M', 'BNext-L'
 - `freeze_backbone`: Whether to freeze the backbone weights during training
-- `add_magnitude_channel`, `add_fft_channel`, `add_lbp_channel`: Toggle additional feature channels for frame processing
+- `add_magnitude_channel`, `add_fft_channel`, `add_lbp_channel`: Toggle additional feature channels for frame processing 
