@@ -11,6 +11,7 @@ from pathlib import Path
 import random
 import tensorflow as tf
 import numpy as np
+import re
 
 def setup_dataset_structure(output_dir):
     """
@@ -29,16 +30,18 @@ def setup_dataset_structure(output_dir):
     print(f"Created dataset structure in {output_dir}")
 
 
-def copy_frames(frames_dir, output_dir, video_id, split='train', num_frames=10):
+def copy_frames(frames_dir, output_dir, video_id, split='train', frames_per_segment=10, num_segments=5):
     """
-    Copies existing frames to the appropriate directory in the dataset structure
+    Copies existing frames to the appropriate directory in the dataset structure,
+    preserving segment structure with multiple frames per segment
     
     Args:
         frames_dir: Path to the directory containing the pre-extracted frames
         output_dir: Base directory for the dataset
         video_id: Identifier string for the video (should match tfrecord entry)
         split: 'train', 'val', or 'test'
-        num_frames: Maximum number of frames to copy (will select evenly distributed frames)
+        frames_per_segment: Number of frames in each segment
+        num_segments: Number of segments per video
     """
     # Source directory for this video's frames
     source_frames_dir = os.path.join(frames_dir, video_id)
@@ -58,24 +61,42 @@ def copy_frames(frames_dir, output_dir, video_id, split='train', num_frames=10):
         return
     
     # Sort frame files (assuming they are named with some numerical order)
-    frame_files.sort()
+    # Try to extract numbers from filenames for proper numerical sorting
+    def get_frame_number(filename):
+        numbers = re.findall(r'\d+', filename)
+        return int(numbers[0]) if numbers else 0
+    
+    frame_files.sort(key=get_frame_number)
     
     if len(frame_files) == 0:
         print(f"Warning: No frames found in {source_frames_dir}")
         return
     
-    # Select evenly distributed frames
-    if len(frame_files) <= num_frames:
-        selected_frames = frame_files  # Use all frames if fewer than requested
+    # Copy all frames, preserving segment structure
+    total_frames = frames_per_segment * num_segments
+    
+    # If we have fewer frames than expected, use all available frames
+    if len(frame_files) <= total_frames:
+        selected_frames = frame_files
     else:
-        # Choose evenly distributed frames
-        indices = [int(i * len(frame_files) / num_frames) for i in range(num_frames)]
+        # Choose evenly distributed frames across all segments
+        indices = [int(i * len(frame_files) / total_frames) for i in range(total_frames)]
         selected_frames = [frame_files[i] for i in indices]
     
-    # Copy selected frames
+    # Copy selected frames, maintaining segment structure
     for i, frame_file in enumerate(selected_frames):
         source_path = os.path.join(source_frames_dir, frame_file)
-        target_path = os.path.join(target_frames_dir, f"frame_{i:02d}{os.path.splitext(frame_file)[1]}")
+        
+        # Calculate segment and frame within segment
+        segment_idx = i // frames_per_segment
+        frame_in_segment = i % frames_per_segment
+        
+        # Create target filename preserving segment information
+        target_path = os.path.join(
+            target_frames_dir, 
+            f"segment_{segment_idx:01d}_frame_{frame_in_segment:02d}{os.path.splitext(frame_file)[1]}"
+        )
+        
         shutil.copy2(source_path, target_path)
     
     print(f"Copied {len(selected_frames)} frames from {source_frames_dir} to {target_frames_dir}")
@@ -114,7 +135,8 @@ def read_tfrecord_map(tfrecord_path):
     return filename_to_fake
 
 
-def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.8, val_ratio=0.2, num_frames=10):
+def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.8, val_ratio=0.2, 
+                   frames_per_segment=10, num_segments=5):
     """
     Processes a directory of pre-extracted frames and organizes them into the PDD dataset structure
     
@@ -124,7 +146,8 @@ def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.8, val_
         tfrecord_path: Path to the TFRecord file with labels
         train_ratio: Proportion of videos to use for training
         val_ratio: Proportion of videos to use for validation
-        num_frames: Number of frames to use from each video
+        frames_per_segment: Number of frames in each segment
+        num_segments: Number of segments per video
     """
     # Create the dataset structure
     setup_dataset_structure(output_dir)
@@ -177,8 +200,8 @@ def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.8, val_
                 skipped_count += 1
                 continue
             
-            # Copy frames
-            copy_frames(frames_dir, output_dir, video_id, split, num_frames)
+            # Copy frames with segment structure preserved
+            copy_frames(frames_dir, output_dir, video_id, split, frames_per_segment, num_segments)
             processed_count += 1
     
     print(f"Processed {processed_count} videos, skipped {skipped_count} videos")
@@ -202,8 +225,11 @@ def main():
     parser.add_argument('--val_ratio', type=float, default=0.2,
                         help='Proportion of videos to use for validation')
     
-    parser.add_argument('--num_frames', type=int, default=10,
-                        help='Number of frames to use from each video')
+    parser.add_argument('--frames_per_segment', type=int, default=10,
+                        help='Number of frames per segment')
+    
+    parser.add_argument('--num_segments', type=int, default=5,
+                        help='Number of segments per video')
     
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed for reproducibility')
@@ -225,7 +251,8 @@ def main():
         args.tfrecord,
         args.train_ratio,
         args.val_ratio,
-        args.num_frames
+        args.frames_per_segment,
+        args.num_segments
     )
     
     print("Dataset preparation complete!")
