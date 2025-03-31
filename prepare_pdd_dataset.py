@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Utility script to prepare the PDD dataset for training with the enhanced model.
-This script helps organize frames from videos into the expected directory structure.
+This script helps organize pre-extracted frames into the expected directory structure.
 """
 
 import os
@@ -9,7 +9,6 @@ import argparse
 import shutil
 from pathlib import Path
 import random
-import cv2
 import tensorflow as tf
 import numpy as np
 
@@ -30,48 +29,56 @@ def setup_dataset_structure(output_dir):
     print(f"Created dataset structure in {output_dir}")
 
 
-def extract_frames(video_path, output_dir, video_id, split='train', num_frames=10):
+def copy_frames(frames_dir, output_dir, video_id, split='train', num_frames=10):
     """
-    Extracts frames from a video and saves them to the appropriate directory
+    Copies existing frames to the appropriate directory in the dataset structure
     
     Args:
-        video_path: Path to the video file
+        frames_dir: Path to the directory containing the pre-extracted frames
         output_dir: Base directory for the dataset
         video_id: Identifier string for the video (should match tfrecord entry)
         split: 'train', 'val', or 'test'
-        num_frames: Number of frames to extract
+        num_frames: Maximum number of frames to copy (will select evenly distributed frames)
     """
-    # Create directory for this video's frames
-    video_frames_dir = os.path.join(output_dir, split, video_id)
-    os.makedirs(video_frames_dir, exist_ok=True)
+    # Source directory for this video's frames
+    source_frames_dir = os.path.join(frames_dir, video_id)
     
-    video = cv2.VideoCapture(video_path)
+    # Target directory for this video's frames
+    target_frames_dir = os.path.join(output_dir, split, video_id)
+    os.makedirs(target_frames_dir, exist_ok=True)
     
-    if not video.isOpened():
-        print(f"Error opening video file {video_path}")
+    # Get list of all frame files in the source directory
+    frame_files = []
+    if os.path.exists(source_frames_dir):
+        for file in os.listdir(source_frames_dir):
+            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                frame_files.append(file)
+    else:
+        print(f"Warning: Frame directory {source_frames_dir} does not exist, skipping.")
         return
     
-    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    # Sort frame files (assuming they are named with some numerical order)
+    frame_files.sort()
     
-    if total_frames == 0:
-        print(f"Warning: Video {video_path} has 0 frames")
+    if len(frame_files) == 0:
+        print(f"Warning: No frames found in {source_frames_dir}")
         return
     
-    # Get frames at regular intervals
-    frame_indices = [int(i * total_frames / num_frames) for i in range(num_frames)]
+    # Select evenly distributed frames
+    if len(frame_files) <= num_frames:
+        selected_frames = frame_files  # Use all frames if fewer than requested
+    else:
+        # Choose evenly distributed frames
+        indices = [int(i * len(frame_files) / num_frames) for i in range(num_frames)]
+        selected_frames = [frame_files[i] for i in indices]
     
-    for i, frame_index in enumerate(frame_indices):
-        video.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-        ret, frame = video.read()
-        
-        if ret:
-            output_path = os.path.join(video_frames_dir, f"frame_{i:02d}.jpg")
-            cv2.imwrite(output_path, frame)
-        else:
-            print(f"Warning: Could not read frame {frame_index} from {video_path}")
+    # Copy selected frames
+    for i, frame_file in enumerate(selected_frames):
+        source_path = os.path.join(source_frames_dir, frame_file)
+        target_path = os.path.join(target_frames_dir, f"frame_{i:02d}{os.path.splitext(frame_file)[1]}")
+        shutil.copy2(source_path, target_path)
     
-    video.release()
-    print(f"Extracted {num_frames} frames from {video_path} to {video_frames_dir}")
+    print(f"Copied {len(selected_frames)} frames from {source_frames_dir} to {target_frames_dir}")
 
 
 def read_tfrecord_map(tfrecord_path):
@@ -105,18 +112,18 @@ def read_tfrecord_map(tfrecord_path):
     return filename_to_fake
 
 
-def process_videos(videos_dir, output_dir, tfrecord_path, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, num_frames=10):
+def process_dataset(frames_dir, output_dir, tfrecord_path, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, num_frames=10):
     """
-    Processes a directory of videos and organizes them into the PDD dataset structure
+    Processes a directory of pre-extracted frames and organizes them into the PDD dataset structure
     
     Args:
-        videos_dir: Directory containing video files
+        frames_dir: Directory containing pre-extracted frames (./data/[filename]/)
         output_dir: Base directory for the dataset
         tfrecord_path: Path to the TFRecord file with labels
         train_ratio: Proportion of videos to use for training
         val_ratio: Proportion of videos to use for validation
         test_ratio: Proportion of videos to use for testing
-        num_frames: Number of frames to extract from each video
+        num_frames: Number of frames to use from each video
     """
     # Create the dataset structure
     setup_dataset_structure(output_dir)
@@ -124,46 +131,43 @@ def process_videos(videos_dir, output_dir, tfrecord_path, train_ratio=0.7, val_r
     # Read the label mapping from TFRecord
     filename_to_fake = read_tfrecord_map(tfrecord_path)
     
-    # Get list of video files
-    video_files = []
-    for root, _, files in os.walk(videos_dir):
-        for file in files:
-            if file.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')):
-                video_files.append(os.path.join(root, file))
+    # Get list of video directories (each containing frames)
+    video_ids = []
+    for item in os.listdir(frames_dir):
+        item_path = os.path.join(frames_dir, item)
+        if os.path.isdir(item_path):
+            video_ids.append(item)
     
     # Shuffle the videos for random split
-    random.shuffle(video_files)
+    random.shuffle(video_ids)
     
     # Split the videos into train/val/test
-    train_end_idx = int(len(video_files) * train_ratio)
-    val_end_idx = train_end_idx + int(len(video_files) * val_ratio)
+    train_end_idx = int(len(video_ids) * train_ratio)
+    val_end_idx = train_end_idx + int(len(video_ids) * val_ratio)
     
-    train_videos = video_files[:train_end_idx]
-    val_videos = video_files[train_end_idx:val_end_idx]
-    test_videos = video_files[val_end_idx:]
+    train_videos = video_ids[:train_end_idx]
+    val_videos = video_ids[train_end_idx:val_end_idx]
+    test_videos = video_ids[val_end_idx:]
     
-    print(f"Split {len(video_files)} videos into Train: {len(train_videos)}, Val: {len(val_videos)}, Test: {len(test_videos)}")
+    print(f"Split {len(video_ids)} videos into Train: {len(train_videos)}, Val: {len(val_videos)}, Test: {len(test_videos)}")
     
     # Process each set of videos
     for videos, split in [(train_videos, 'train'), (val_videos, 'val'), (test_videos, 'test')]:
-        for video_path in videos:
-            # Extract video ID from filename - adjust this based on your naming convention
-            video_id = Path(video_path).stem
-            
+        for video_id in videos:
             # Verify the video exists in TFRecord
             if video_id not in filename_to_fake:
                 print(f"Warning: Video {video_id} not found in TFRecord, skipping.")
                 continue
             
-            # Extract frames
-            extract_frames(video_path, output_dir, video_id, split, num_frames)
+            # Copy frames
+            copy_frames(frames_dir, output_dir, video_id, split, num_frames)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare PDD dataset for training")
+    parser = argparse.ArgumentParser(description="Prepare PDD dataset for training using pre-extracted frames")
     
-    parser.add_argument('--videos_dir', type=str, required=True,
-                        help='Path to directory containing video files')
+    parser.add_argument('--frames_dir', type=str, default='./data/',
+                        help='Path to directory containing pre-extracted frames (./data/[filename]/)')
     
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Path to output directory for the prepared dataset')
@@ -181,7 +185,7 @@ def main():
                         help='Proportion of videos to use for testing')
     
     parser.add_argument('--num_frames', type=int, default=10,
-                        help='Number of frames to extract from each video')
+                        help='Number of frames to use from each video')
     
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed for reproducibility')
@@ -196,9 +200,9 @@ def main():
     if abs(args.train_ratio + args.val_ratio + args.test_ratio - 1.0) > 1e-6:
         print("Warning: Train, val, and test ratios should sum to 1.0")
     
-    # Process videos
-    process_videos(
-        args.videos_dir,
+    # Process dataset
+    process_dataset(
+        args.frames_dir,
         args.output_dir,
         args.tfrecord,
         args.train_ratio,
