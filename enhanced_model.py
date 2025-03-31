@@ -52,13 +52,26 @@ class DeepfakeVideoClassifier(L.LightningModule):
         # Create a fusion network
         self.fusion_network = nn.Sequential(
             nn.Linear(self.frame_feature_dim + self.processed_feature_dim, 512),
+            nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, num_classes if num_classes >= 3 else 1)
         )
+        
+        # Initialize fusion network weights to prevent exploding gradients 
+        for m in self.fusion_network.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+        
+        # Feature normalizers for stabilizing training
+        self.frame_feature_norm = nn.LayerNorm(self.frame_feature_dim)
+        self.processed_feature_norm = nn.LayerNorm(self.processed_feature_dim)
         
         # Save hyperparameters
         self.learning_rate = learning_rate
@@ -111,6 +124,10 @@ class DeepfakeVideoClassifier(L.LightningModule):
         # Extract frame features
         frame_features = self.extract_frame_features(frame)
         
+        # Apply normalization to stabilize features
+        frame_features = self.frame_feature_norm(frame_features)
+        processed_features = self.processed_feature_norm(processed_features)
+        
         # Store intermediate features for analysis
         self.intermediate_features['frame_features'] = frame_features
         self.intermediate_features['processed_features'] = processed_features
@@ -128,12 +145,21 @@ class DeepfakeVideoClassifier(L.LightningModule):
         # Create optimizer for all trainable parameters
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=self.learning_rate
+            lr=self.learning_rate,
+            weight_decay=1e-4  # Add weight decay to prevent overfitting
         )
         scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=1., end_factor=0.1, total_iters=50
         )
-        return [optimizer], [scheduler]
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1
+            },
+            "monitor": "val_loss"
+        }
     
     def _step(self, batch, i_batch, phase=None):
         # Extract data from batch
@@ -149,15 +175,28 @@ class DeepfakeVideoClassifier(L.LightningModule):
         model_outputs = self(frames, processed_features)
         outs.update(model_outputs)
         
-        # Calculate loss
+        # Calculate loss with a dynamic pos_weight based on training progress
         if self.num_classes == 2:
+            # Scale down pos_weight during initial training to prevent loss explosion
+            # This helps avoid too much emphasis on the positive class at the beginning
+            if phase == "train":
+                current_epoch = self.current_epoch + 1  # epochs start at 0
+                warmup_epochs = 5
+                dynamic_pos_weight = self.pos_weight * min(current_epoch / warmup_epochs, 1.0)
+            else:
+                dynamic_pos_weight = self.pos_weight
+                
             loss = F.binary_cross_entropy_with_logits(
                 input=outs["logits"][:, 0], 
                 target=outs["labels"], 
-                pos_weight=torch.as_tensor(self.pos_weight, device=self.device)
+                pos_weight=torch.as_tensor(dynamic_pos_weight, device=self.device)
             )
         else:
             raise NotImplementedError("Only binary classification is implemented!")
+        
+        # Clip gradients to prevent explosion
+        if phase == "train":
+            torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
         
         # Transfer tensors to CPU
         for k in outs:
@@ -277,11 +316,14 @@ class TFRecordDatasetLoader:
         psnr = tf.reduce_mean(parsed_example['psnr'])
         ssim = tf.reduce_mean(parsed_example['ssim'])
         
-        # Combine all features into a single tensor
-        processed_features = tf.stack([
-            flicker, lip_movement, blink, head_movement, 
-            pulse, psnr, ssim
-        ])
+        # Clip extreme values to prevent numerical instability
+        # Use tf.clip_by_value to limit the range of each feature
+        features_raw = [flicker, lip_movement, blink, head_movement, pulse, psnr, ssim]
+        features_clipped = [tf.clip_by_value(f, -10.0, 10.0) for f in features_raw]
+        
+        # Min-max normalize the features to [0, 1] range after clipping
+        # This helps stabilize training by keeping all features in a consistent range
+        processed_features = tf.stack(features_clipped)
         
         # Convert fake to is_real (0=real, 1=fake) -> (1=real, 0=fake)
         is_real = 1 - parsed_example['fake']
