@@ -2,7 +2,7 @@ matplotlib
 pandas 
 pyarrow
 wandb
-
+dlib
 opencv-python
 scipy
 scikit-learn
