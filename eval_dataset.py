@@ -62,7 +62,7 @@ class EvalDataset(Dataset):
                         items.append({
                             'image_path': os.path.join(video_dir, frame_file),
                             'is_real': torch.tensor([1], dtype=torch.long),  # Real = 1
-                            'filename': video_id
+                            'filename': f"real_{video_id}"  # Add "real_" prefix
                         })
         
         # Load fake frames
@@ -81,10 +81,12 @@ class EvalDataset(Dataset):
                         items.append({
                             'image_path': os.path.join(video_dir, frame_file),
                             'is_real': torch.tensor([0], dtype=torch.long),  # Fake = 0
-                            'filename': video_id
+                            'filename': f"fake_{video_id}"  # Add "fake_" prefix
                         })
         
         print(f"Loaded {len(items)} frame images for the evaluation dataset")
+        print(f"Real samples: {sum(1 for item in items if item['is_real'][0] == 1)}")
+        print(f"Fake samples: {sum(1 for item in items if item['is_real'][0] == 0)}")
         
         return items
     

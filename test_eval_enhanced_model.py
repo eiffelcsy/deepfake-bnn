@@ -91,19 +91,19 @@ def evaluate_frames(model, test_loader, device):
             
             # Store predictions by video
             for i, filename in enumerate(filenames):
-                # Include the label in the video identifier to handle duplicate filenames
-                # 0=real, 1=fake according to your convention
-                is_real = labels[i][0].cpu().item() 
-                category = "fake" if is_real == 1 else "real"
-                video_key = f"{category}/{filename}"
+                # The filename already contains the category (e.g., "real_xxx" or "fake_xxx")
+                # So we use it directly as the video key
+                video_key = filename
+                is_real = labels[i][0].cpu().item()
                 
                 video_frame_preds[video_key].append(preds[i].cpu().item())
                 video_frame_labels[video_key].append(is_real)
                 unique_videos.add((video_key, is_real))
     
     # Debug output for unique videos and their labels
-    real_videos = [v for v, l in unique_videos if l == 0]  # 0=real
-    fake_videos = [v for v, l in unique_videos if l == 1]  # 1=fake
+    # In eval_dataset.py: Real = 1, Fake = 0
+    real_videos = [v for v, l in unique_videos if l == 1]  # 1=real
+    fake_videos = [v for v, l in unique_videos if l == 0]  # 0=fake
     print(f"Debug - Found {len(real_videos)} unique real videos and {len(fake_videos)} unique fake videos")
     print(f"Debug - First 5 real videos: {real_videos[:5]}")
     print(f"Debug - First 5 fake videos: {fake_videos[:5]}")
@@ -116,18 +116,18 @@ def majority_vote(predictions):
     Apply majority voting to a list of predictions
     
     Args:
-        predictions: List of binary predictions (0 for real, 1 for fake)
+        predictions: List of binary predictions (1 for real, 0 for fake)
         
     Returns:
-        Final prediction (0 for real, 1 for fake)
+        Final prediction (1 for real, 0 for fake)
     """
-    # Count frames predicted as fake (pred >= 0.5 maps to 1=fake)
-    fake_count = sum(1 for p in predictions if p >= 0.5)
-    real_count = len(predictions) - fake_count
+    # Count frames predicted as real (pred >= 0.5 maps to 1=real)
+    real_count = sum(1 for p in predictions if p >= 0.5)
+    fake_count = len(predictions) - real_count
     
-    # Return 1 (fake) if more frames are classified as fake, 0 (real) otherwise
-    # If equal, default to fake (more conservative approach for deepfake detection)
-    return 1 if fake_count >= real_count else 0
+    # Return 1 (real) if more frames are classified as real, 0 (fake) otherwise
+    # If equal, default to real (more conservative approach for deepfake detection)
+    return 1 if real_count >= fake_count else 0
 
 
 def calculate_metrics(video_preds, video_labels):
@@ -150,16 +150,16 @@ def calculate_metrics(video_preds, video_labels):
         pred = video_preds[video_key]
         label = video_labels[video_key]
         
-        # Using your convention: 1=fake, 0=real
-        # True positive = correctly predicted fake
-        # True negative = correctly predicted real
-        if pred == 1 and label == 1:  # Correctly predicted fake
+        # Using convention from EvalDataset: 1=real, 0=fake
+        # True positive = correctly predicted real
+        # True negative = correctly predicted fake
+        if pred == 1 and label == 1:  # Correctly predicted real
             true_positives += 1
-        elif pred == 1 and label == 0:  # Incorrectly predicted fake (actually real)
+        elif pred == 1 and label == 0:  # Incorrectly predicted real (actually fake)
             false_positives += 1
-        elif pred == 0 and label == 0:  # Correctly predicted real
+        elif pred == 0 and label == 0:  # Correctly predicted fake
             true_negatives += 1
-        elif pred == 0 and label == 1:  # Incorrectly predicted real (actually fake)
+        elif pred == 0 and label == 1:  # Incorrectly predicted fake (actually real)
             false_negatives += 1
     
     # Calculate metrics
@@ -201,12 +201,19 @@ def save_predictions(video_preds, video_labels, video_frame_counts, video_frame_
             label = video_labels[video_key]
             frame_count = video_frame_counts[video_key]
             
-            # Split the video key to get category and filename
-            category, filename = video_key.split('/', 1)
+            # Extract category and filename from the video key
+            # The video key format is now "category_filename"
+            parts = video_key.split('_', 1)
+            if len(parts) == 2:
+                category, filename = parts
+            else:
+                # Fallback if no underscore is found
+                category = "unknown"
+                filename = video_key
             
-            # Using convention: 0=real, 1=fake
-            expected_label = "fake" if label == 1 else "real"
-            prediction = "fake" if pred == 1 else "real"
+            # Convert numerical labels to text for clarity (1=real, 0=fake)
+            expected_label = "real" if label == 1 else "fake"
+            prediction = "real" if pred == 1 else "fake"
             
             # Calculate confidence as the percentage of frames that agree with the final prediction
             agreement_count = sum(1 for p in video_frame_preds[video_key] if (p >= 0.5) == (pred == 1))
