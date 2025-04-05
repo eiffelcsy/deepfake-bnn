@@ -408,16 +408,24 @@ def main():
     all_videos = fake_videos + real_videos
     print(f"Found {len(fake_videos)} fake videos and {len(real_videos)} real videos")
     
-    # Process videos
+    # Process videos sequentially instead of using ThreadPoolExecutor
     data = []
-    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        futures = [executor.submit(process_video, video_path, label, output_dir) 
-                  for video_path, label, output_dir in all_videos]
-        
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing videos"):
-            result = future.result()
+    
+    for video_info in tqdm(all_videos, desc="Processing videos"):
+        video_path, label, output_dir = video_info
+        try:
+            result = process_video(video_path, label, output_dir)
             if result:
                 data.append(result)
+                
+            # Force garbage collection after each video to free memory
+            import gc
+            gc.collect()
+            
+        except Exception as e:
+            video_name = os.path.basename(video_path)
+            print(f"Error processing {video_name}: {e}")
+            continue
     
     # Convert to DataFrame
     df_features = pd.DataFrame(data)
