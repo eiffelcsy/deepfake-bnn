@@ -433,34 +433,32 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         for item in tf_dataset:
             filename = item['filename'].numpy().decode('utf-8')
             is_real_value = item['is_real'].numpy()[0]
-            category = 'real' if is_real_value == 1 else 'fake'
-            
-            # Add category prefix to filename to match the format in EvalDataset
-            prefixed_filename = f"{category}_{filename}"
+            # The prefix is already added in EvalDataset, so just use the original filename here
             
             self.processed_features.append({
-                'filename': prefixed_filename,
-                'original_filename': filename,
+                'filename': filename,
                 'processed_features': item['processed_features'].numpy(),
                 'is_real': item['is_real'].numpy()
             })
         
-        # Create a mapping from prefixed filename to processed features
+        # Create a mapping from filename to processed features
         self.filename_to_features = {}
         for item in self.processed_features:
-            # Original filename with category prefix
-            prefixed_filename = item['filename']
-            # Filename without extension with category prefix
-            basename = f"{os.path.splitext(prefixed_filename)[0]}"
+            # Original filename (no need to add category prefix)
+            filename = item['filename']
+            # Filename without extension
+            basename = os.path.splitext(filename)[0]
+            # Determine category from is_real value
+            category = 'real' if item['is_real'][0] == 1 else 'fake'
             
             feature_data = {
                 'processed_features': item['processed_features'],
                 'is_real': item['is_real']
             }
             
-            # Store both with and without extension
-            self.filename_to_features[prefixed_filename] = feature_data
-            self.filename_to_features[basename] = feature_data
+            # Store with category prefix to match EvalDataset format
+            self.filename_to_features[f"{category}_{filename}"] = feature_data
+            self.filename_to_features[f"{category}_{basename}"] = feature_data
         
         print(f"Loaded {len(self.processed_features)} items from TFRecord, created {len(self.filename_to_features)} mappings")
         
@@ -469,6 +467,9 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             print("First 3 TFRecord entries:")
             for i in range(min(3, len(self.processed_features))):
                 print(f"  {self.processed_features[i]['filename']} - is_real: {self.processed_features[i]['is_real'][0]}")
+                # Also print the keyed versions
+                category = 'real' if self.processed_features[i]['is_real'][0] == 1 else 'fake'
+                print(f"  Keyed as: {category}_{self.processed_features[i]['filename']}")
         
         # Update the frame dataset labels based on the TFRecord data
         updated_items = []
