@@ -448,6 +448,7 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             filename = item['filename']
             # Filename without extension
             basename = os.path.splitext(filename)[0]
+            
             # Determine category from is_real value
             category = 'real' if item['is_real'][0] == 1 else 'fake'
             
@@ -456,7 +457,11 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
                 'is_real': item['is_real']
             }
             
-            # Store with category prefix to match EvalDataset format
+            # Store both with and without extension (original filename)
+            self.filename_to_features[filename] = feature_data
+            self.filename_to_features[basename] = feature_data
+            
+            # Also store with category prefix to match EvalDataset format
             self.filename_to_features[f"{category}_{filename}"] = feature_data
             self.filename_to_features[f"{category}_{basename}"] = feature_data
         
@@ -466,10 +471,21 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         if len(self.processed_features) > 0:
             print("First 3 TFRecord entries:")
             for i in range(min(3, len(self.processed_features))):
-                print(f"  {self.processed_features[i]['filename']} - is_real: {self.processed_features[i]['is_real'][0]}")
-                # Also print the keyed versions
+                filename = self.processed_features[i]['filename']
                 category = 'real' if self.processed_features[i]['is_real'][0] == 1 else 'fake'
-                print(f"  Keyed as: {category}_{self.processed_features[i]['filename']}")
+                print(f"  Original filename: {filename} - is_real: {self.processed_features[i]['is_real'][0]}")
+                print(f"  Mapping includes: {filename}, {os.path.splitext(filename)[0]}, {category}_{filename}, {category}_{os.path.splitext(filename)[0]}")
+            
+            # Show a sample of mapping keys
+            all_keys = list(self.filename_to_features.keys())
+            print(f"Sample of mapping keys (from {len(all_keys)} total):")
+            for key in all_keys[:10]:
+                print(f"  - {key}")
+                
+            # Print distribution of real/fake in mapping
+            real_count = sum(1 for k, v in self.filename_to_features.items() if v['is_real'][0] == 1 and not ('_' in k))
+            fake_count = sum(1 for k, v in self.filename_to_features.items() if v['is_real'][0] == 0 and not ('_' in k))
+            print(f"Mapping distribution (original filenames only): {real_count} real, {fake_count} fake")
         
         # Update the frame dataset labels based on the TFRecord data
         updated_items = []
@@ -478,11 +494,25 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             item = frame_dataset.items[idx]
             filename = item['filename']  # This should already have the category prefix
             
-            # Try different filename variations for matching
+            # Check if filename starts with "real_" or "fake_" and strip the prefix
+            # to get the original filename used in TFRecord
+            if filename.startswith("real_"):
+                original_filename = filename[5:]  # Remove "real_" prefix
+                category = "real"
+            elif filename.startswith("fake_"):
+                original_filename = filename[5:]  # Remove "fake_" prefix
+                category = "fake"
+            else:
+                # No prefix, use as is
+                original_filename = filename
+                # Determine category from the is_real value
+                category = "real" if item['is_real'][0] == 1 else "fake"
+            
+            # Try different filename variations for matching, with category prefix added
             filename_variations = [
-                filename,  # As is (should have category prefix)
-                os.path.splitext(filename)[0],  # Without extension
-                f"{filename}.mp4"  # With .mp4 extension
+                f"{category}_{original_filename}",  # With category prefix
+                f"{category}_{os.path.splitext(original_filename)[0]}",  # Without extension, with prefix
+                f"{category}_{original_filename}.mp4",  # With .mp4 extension, with prefix
             ]
             
             matched = False
@@ -514,11 +544,25 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         # Get filename from frame item (already has category prefix)
         filename = frame_item['filename']
         
-        # Try different filename variations for matching
+        # Check if filename starts with "real_" or "fake_" and strip the prefix
+        # to get the original filename used in TFRecord
+        if filename.startswith("real_"):
+            original_filename = filename[5:]  # Remove "real_" prefix
+            category = "real"
+        elif filename.startswith("fake_"):
+            original_filename = filename[5:]  # Remove "fake_" prefix
+            category = "fake"
+        else:
+            # No prefix, use as is
+            original_filename = filename
+            # Determine category from the is_real value
+            category = "real" if frame_item['is_real'][0] == 1 else "fake"
+        
+        # Try different filename variations for matching, with category prefix added
         filename_variations = [
-            filename,  # As is 
-            os.path.splitext(filename)[0],  # Without extension
-            f"{filename}.mp4"  # With .mp4 extension
+            f"{category}_{original_filename}",  # With category prefix
+            f"{category}_{os.path.splitext(original_filename)[0]}",  # Without extension, with prefix
+            f"{category}_{original_filename}.mp4",  # With .mp4 extension, with prefix
         ]
         
         # Find matching features
