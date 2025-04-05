@@ -331,12 +331,16 @@ if __name__ == "__main__":
     if args.save_detailed_results:
         detailed_output_file = args.output_file.replace('.csv', '_detailed.csv')
         with open(detailed_output_file, "w") as f:
-            f.write("filename,frame_idx,prediction,confidence\n")
+            f.write("filename,category,frame_idx,prediction,confidence\n")
             for video_key in sorted(video_frame_preds.keys()):
+                # Split the video key to get category and filename
+                category, filename = video_key.split('/', 1)
+                
                 for i, pred in enumerate(video_frame_preds[video_key]):
+                    # Using convention: pred >= 0.5 -> fake (1), pred < 0.5 -> real (0)
                     confidence = pred if pred >= 0.5 else 1 - pred  # Convert to 0.5-1.0 range
-                    prediction = "real" if pred >= 0.5 else "fake"
-                    f.write(f"{video_key},{i},{prediction},{confidence:.4f}\n")
+                    prediction = "fake" if pred >= 0.5 else "real"
+                    f.write(f"{filename},{category},{i},{prediction},{confidence:.4f}\n")
         print(f"Detailed frame-level predictions saved to {detailed_output_file}")
     
     print("Testing completed!") 
