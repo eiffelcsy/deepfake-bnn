@@ -437,7 +437,7 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
                 'is_real': item['is_real'].numpy()
             })
         
-        # Create a mapping from filename to processed features
+        # Create a mapping from category+filename to processed features
         # Store both with and without file extension to handle different naming patterns
         self.filename_to_features = {}
         for item in self.processed_features:
@@ -445,15 +445,18 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             filename = item['filename']
             # Filename without extension
             basename = os.path.splitext(filename)[0]
+            # Category (real or fake)
+            category = 'real' if item['is_real'][0] == 1 else 'fake'
             
             feature_data = {
                 'processed_features': item['processed_features'],
-                'is_real': item['is_real']
+                'is_real': item['is_real'],
+                'category': category
             }
             
-            # Store under both names for flexible matching
-            self.filename_to_features[filename] = feature_data
-            self.filename_to_features[basename] = feature_data
+            # Store with category prefix to avoid collisions
+            self.filename_to_features[f"{category}_{filename}"] = feature_data
+            self.filename_to_features[f"{category}_{basename}"] = feature_data
         
         print(f"Loaded {len(self.processed_features)} items from TFRecord, created {len(self.filename_to_features) // 2} mappings")
         
@@ -463,12 +466,14 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         for idx in range(len(frame_dataset)):
             item = frame_dataset.items[idx]
             original_filename = item['filename']
+            # Determine category from the frame dataset
+            category = 'real' if item['is_real'][0] == 1 else 'fake'
             
-            # Try variations of the filename for matching
+            # Try variations of the filename for matching, with category prefix
             filename_variations = [
-                original_filename,  # Original
-                os.path.splitext(original_filename)[0],  # Without extension
-                original_filename + '.mp4',  # With .mp4 extension
+                f"{category}_{original_filename}",  # Original with category
+                f"{category}_{os.path.splitext(original_filename)[0]}",  # Without extension with category
+                f"{category}_{original_filename}.mp4",  # With .mp4 extension with category
             ]
             
             matched = False
@@ -481,7 +486,7 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
                     break
             
             if not matched:
-                print(f"Warning: Could not match {original_filename} to any TFRecord entry")
+                print(f"Warning: Could not match {category}_{original_filename} to any TFRecord entry")
             
             updated_items.append(item)
         
@@ -499,12 +504,14 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         
         # Get filename from frame item
         original_filename = frame_item['filename']
+        # Determine category from the frame item
+        category = 'real' if frame_item['is_real'][0] == 1 else 'fake'
         
-        # Try different filename variations for matching
+        # Try different filename variations for matching, with category prefix
         filename_variations = [
-            original_filename,  # Original
-            os.path.splitext(original_filename)[0],  # Without extension
-            original_filename + '.mp4',  # With .mp4 extension
+            f"{category}_{original_filename}",  # Original with category
+            f"{category}_{os.path.splitext(original_filename)[0]}",  # Without extension with category
+            f"{category}_{original_filename}.mp4",  # With .mp4 extension with category
         ]
         
         # Find matching features
@@ -520,7 +527,7 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             # If not found, use zeros as placeholder and the label from the frame dataset
             processed_features = np.zeros(7, dtype=np.float32)
             is_real = frame_item['is_real']
-            print(f"Warning: Video {original_filename} not found in TFRecord. Using frame dataset label.")
+            print(f"Warning: Video {category}_{original_filename} not found in TFRecord. Using frame dataset label.")
         
         # Apply transform if provided
         image = frame_item['image']

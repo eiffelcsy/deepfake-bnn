@@ -88,7 +88,8 @@ if __name__ == "__main__":
 
     # Load the trained model from checkpoint
     print(f"Loading model from checkpoint: {args.checkpoint}")
-    model = DeepfakeVideoClassifier.load_from_checkpoint(args.checkpoint)
+    model = DeepfakeVideoClassifier.load_from_checkpoint(args.checkpoint, strict=False)
+    print("Model loaded with strict=False to handle architecture differences")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
