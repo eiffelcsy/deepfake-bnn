@@ -307,13 +307,13 @@ if __name__ == "__main__":
         video_labels[video_key] = round(sum(labels) / len(labels))
     
     # Debug output for video labels
-    real_videos = sum(1 for label in video_labels.values() if label == 0)  # 0=real
-    fake_videos = sum(1 for label in video_labels.values() if label == 1)  # 1=fake
+    real_videos = sum(1 for label in video_labels.values() if label == 1)  # 1=real
+    fake_videos = sum(1 for label in video_labels.values() if label == 0)  # 0=fake
     print(f"Debug - After aggregation: {real_videos} real videos, {fake_videos} fake videos")
     
     # Print list of video IDs and their labels
-    real_video_ids = sorted([vid for vid, label in video_labels.items() if label == 0])
-    fake_video_ids = sorted([vid for vid, label in video_labels.items() if label == 1])
+    real_video_ids = sorted([vid for vid, label in video_labels.items() if label == 1])
+    fake_video_ids = sorted([vid for vid, label in video_labels.items() if label == 0])
     print(f"Debug - Real video IDs ({len(real_video_ids)}): {real_video_ids}")
     print(f"Debug - Fake video IDs ({len(fake_video_ids)}): {fake_video_ids}")
     
