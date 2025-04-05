@@ -204,7 +204,7 @@ def save_predictions(video_preds, video_labels, video_frame_counts, video_frame_
             # Split the video key to get category and filename
             category, filename = video_key.split('/', 1)
             
-            # Convert numerical labels to text for clarity (0=real, 1=fake)
+            # Using convention: 0=real, 1=fake
             expected_label = "fake" if label == 1 else "real"
             prediction = "fake" if pred == 1 else "real"
             

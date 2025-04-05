@@ -367,7 +367,7 @@ class TFRecordDatasetLoader:
             dict containing:
             - filename: video filename
             - processed_features: tensor of concatenated features
-            - is_real: binary label (0=real, 1=fake)
+            - label: binary label (0=real, 1=fake)
         """
         # For each feature, take the mean to get a single value
         flicker = tf.reduce_mean(parsed_example['flicker'])
@@ -387,13 +387,14 @@ class TFRecordDatasetLoader:
         # This helps stabilize training by keeping all features in a consistent range
         processed_features = tf.stack(features_clipped)
         
-        # Convert fake to is_real (0=real, 1=fake) -> (1=real, 0=fake)
-        is_real = 1 - parsed_example['fake']
+        # Just use the 'fake' value directly as the label to maintain the same convention:
+        # 0=real, 1=fake
+        label = parsed_example['fake']
         
         return {
             'filename': parsed_example['filename'],
             'processed_features': processed_features,
-            'is_real': is_real
+            'label': label  # 0=real, 1=fake
         }
     
     @staticmethod
@@ -434,7 +435,7 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             self.processed_features.append({
                 'filename': item['filename'].numpy().decode('utf-8'),
                 'processed_features': item['processed_features'].numpy(),
-                'is_real': item['is_real'].numpy()
+                'label': item['label'].numpy()
             })
         
         # Create a mapping from category+filename to processed features
@@ -446,11 +447,11 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             # Filename without extension
             basename = os.path.splitext(filename)[0]
             # Category (real or fake)
-            category = 'real' if item['is_real'][0] == 1 else 'fake'
+            category = 'real' if item['label'][0] == 0 else 'fake'
             
             feature_data = {
                 'processed_features': item['processed_features'],
-                'is_real': item['is_real'],
+                'label': item['label'],
                 'category': category
             }
             
@@ -464,10 +465,24 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         updated_items = []
         matched_count = 0
         for idx in range(len(frame_dataset)):
-            item = frame_dataset.items[idx]
+            item = frame_dataset.items[idx].copy()  # Create a copy to avoid modifying the original
             original_filename = item['filename']
-            # Determine category from the frame dataset
-            category = 'real' if item['is_real'][0] == 1 else 'fake'
+            
+            # Determine category from original item['is_real']: 0=real, 1=fake
+            if 'is_real' in item:
+                # Convert the original EvalDataset label (1=real, 0=fake) to our convention (0=real, 1=fake)
+                if len(item['is_real'].shape) > 0 and item['is_real'][0] == 1:
+                    # Was labeled as real (1) in original dataset, should be real (0) in our convention
+                    item['label'] = torch.tensor([0], dtype=torch.long)
+                    category = 'real'
+                else:
+                    # Was labeled as fake (0) in original dataset, should be fake (1) in our convention
+                    item['label'] = torch.tensor([1], dtype=torch.long)
+                    category = 'fake'
+            else:
+                # If no label, use a placeholder
+                item['label'] = torch.tensor([0], dtype=torch.long)  # Default to real
+                category = 'real'
             
             # Try variations of the filename for matching, with category prefix
             filename_variations = [
@@ -479,8 +494,8 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
             matched = False
             for filename in filename_variations:
                 if filename in self.filename_to_features:
-                    # Update the is_real label from the TFRecord
-                    item['is_real'] = torch.tensor(self.filename_to_features[filename]['is_real'], dtype=torch.long)
+                    # Update the label from the TFRecord (0=real, 1=fake)
+                    item['label'] = torch.tensor(self.filename_to_features[filename]['label'], dtype=torch.long)
                     matched = True
                     matched_count += 1
                     break
@@ -504,8 +519,13 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         
         # Get filename from frame item
         original_filename = frame_item['filename']
-        # Determine category from the frame item
-        category = 'real' if frame_item['is_real'][0] == 1 else 'fake'
+        
+        # Determine category from label (0=real, 1=fake)
+        if 'label' in frame_item:
+            category = 'real' if frame_item['label'][0] == 0 else 'fake'
+        else:
+            # If no label field, try to use is_real
+            category = 'real' if frame_item.get('is_real', [1])[0] == 0 else 'fake'
         
         # Try different filename variations for matching, with category prefix
         filename_variations = [
@@ -519,14 +539,14 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         for filename in filename_variations:
             if filename in self.filename_to_features:
                 processed_features = self.filename_to_features[filename]['processed_features']
-                is_real = torch.tensor(self.filename_to_features[filename]['is_real'], dtype=torch.long)
+                label = torch.tensor(self.filename_to_features[filename]['label'], dtype=torch.long)
                 matched = True
                 break
         
         if not matched:
             # If not found, use zeros as placeholder and the label from the frame dataset
             processed_features = np.zeros(7, dtype=np.float32)
-            is_real = frame_item['is_real']
+            label = frame_item.get('label', torch.tensor([0], dtype=torch.long))
             print(f"Warning: Video {category}_{original_filename} not found in TFRecord. Using frame dataset label.")
         
         # Apply transform if provided
@@ -537,6 +557,6 @@ class DeepfakeVideoDataset(torch.utils.data.Dataset):
         return {
             'image': image,
             'processed_features': torch.tensor(processed_features, dtype=torch.float32),
-            'is_real': is_real,
+            'is_real': label,  # Keep the key as 'is_real' for compatibility with existing model
             'filename': original_filename
         } 
